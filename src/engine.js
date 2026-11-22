@@ -1174,6 +1174,76 @@
     return -off(views[N / 4]) + off(views[(3 * N) / 4]);
   }
 
+
+  /* Creusage par les couleurs (space carving) : un voxel de surface visible par au moins 3 vues dont les couleurs
+     divergent n'appartient pas a la vraie surface (la silhouette a rempli un creux) : on l'enleve, couche par couche.
+     work : indices ix + n*(rf + Hv*iz), valeurs 0..1. Securite : si trop de volume part, on annule tout. */
+  function carveByColor(views, work, n, Hv, half, c, s, vs, tau, maxFrac) {
+    const N = views.length, total = n * Hv * n;
+    const occ = new Uint8Array(total);
+    let vol = 0;
+    for (let i = 0; i < total; i++) if (work[i] >= 0.5) { occ[i] = 1; vol++; }
+    const orig = occ.slice(), tested = new Uint8Array(total), tmp = [0, 0, 0];
+    const cols = new Float32Array(N * 3), vis = new Int32Array(N);
+    const sx = (ix) => ix + 0.5 - half;
+    const at = (ix, rf, iz) => (ix < 0 || ix >= n || rf < 0 || rf >= Hv || iz < 0 || iz >= n) ? 0 : occ[ix + n * (rf + Hv * iz)];
+    let carvedTotal = 0;
+    for (let pass = 0; pass < 80; pass++) {
+      const kill = [];
+      for (let iz = 0; iz < n; iz++) for (let rf = 0; rf < Hv; rf++) for (let ix = 0; ix < n; ix++) {
+        const i = ix + n * (rf + Hv * iz);
+        if (!occ[i] || tested[i]) continue;
+        let nx = 0, ny = 0, nz = 0;
+        if (!at(ix - 1, rf, iz)) nx -= 1; if (!at(ix + 1, rf, iz)) nx += 1;
+        if (!at(ix, rf - 1, iz)) ny -= 1; if (!at(ix, rf + 1, iz)) ny += 1;
+        if (!at(ix, rf, iz - 1)) nz -= 1; if (!at(ix, rf, iz + 1)) nz += 1;
+        if (!(nx || ny || nz)) continue; // interieur
+        if (rf < 1) { tested[i] = 1; continue; } // le sol n'est pas creuse
+        const ln = Math.hypot(nx, nz) || 1, hx = nx / ln, hz = nz / ln;
+        if (!nx && !nz) { tested[i] = 1; continue; } // face horizontale : aucune vue ne la voit bien
+        const X = sx(ix), Z = sx(iz), Y = (rf + 0.5) * vs;
+        let m = 0;
+        for (let k = 0; k < N; k++) {
+          const dX = s[k], dZ = c[k];
+          if (hx * dX + hz * dZ < 0.35) continue;
+          let blocked = false;
+          for (let t = 1.5; t < n * 1.5; t += 1) {
+            const qx = Math.floor(ix + 0.5 + dX * t), qz = Math.floor(iz + 0.5 + dZ * t);
+            if (qx < 0 || qx >= n || qz < 0 || qz >= n) break;
+            if (occ[qx + n * (rf + Hv * qz)]) { blocked = true; break; }
+          }
+          if (blocked) continue;
+          sampleView(views[k], (X * c[k] - Z * s[k]) * vs, Y, vs, tmp);
+          cols[m * 3] = tmp[0]; cols[m * 3 + 1] = tmp[1]; cols[m * 3 + 2] = tmp[2]; m++;
+        }
+        tested[i] = 1;
+        if (m < 3) continue;
+        // l'eclairage varie d'une vue a l'autre : on compare les teintes a luminosite egalisee
+        const lum = new Array(m);
+        for (let j = 0; j < m; j++) lum[j] = 1 + 0.3 * cols[j * 3] + 0.59 * cols[j * 3 + 1] + 0.11 * cols[j * 3 + 2];
+        const ls = lum.slice().sort((a, b) => a - b), lref = ls[m >> 1];
+        for (let j = 0; j < m; j++) { const g = clamp(lref / lum[j], 0.5, 2); cols[j * 3] *= g; cols[j * 3 + 1] *= g; cols[j * 3 + 2] *= g; }
+        const med = [0, 0, 0], buf = new Array(m);
+        for (let ch = 0; ch < 3; ch++) {
+          for (let j = 0; j < m; j++) buf[j] = cols[j * 3 + ch];
+          buf.sort((a, b) => a - b); med[ch] = buf[m >> 1];
+        }
+        let good = 0;
+        for (let j = 0; j < m; j++) {
+          const dr = cols[j * 3] - med[0], dg = cols[j * 3 + 1] - med[1], db = cols[j * 3 + 2] - med[2];
+          if (dr * dr + dg * dg + db * db <= tau * tau) good++;
+        }
+        if (good < m - Math.floor(m / 4)) kill.push(i);
+      }
+      if (!kill.length) break;
+      for (const i of kill) occ[i] = 0;
+      carvedTotal += kill.length;
+      if (carvedTotal > maxFrac * vol) return { carved: 0, reverted: true, wanted: carvedTotal, volume: vol };
+    }
+    if (carvedTotal) for (let i = 0; i < total; i++) if (orig[i] && !occ[i]) work[i] = 0;
+    return { carved: carvedTotal, reverted: false, volume: vol };
+  }
+
   async function reconstructN(views, opts, progress) {
     const o = Object.assign({}, DEFAULTS, { direction: 'auto', tolerance: 'auto' }, opts || {});
     const step = async (m) => { if (progress) await progress(m); };
@@ -1283,6 +1353,8 @@
     let any = false;
     for (let i = 0; i < work.length; i++) if (work[i] >= 0.5) { any = true; break; }
     if (!any) throw new Error("Les vues ne se recoupent pas : vérifie l'ordre des vues.");
+    let carveInfo = null;
+    if (o.carve) { for (let k = 0; k < N; k++) { views[k].sign = 1; views[k].shift = shiftV[k]; } await step('Creusage par les couleurs…'); carveInfo = carveByColor(views, work, n, Hv, half, c, s, vs, o.carveTau || 60, o.carveMax || 0.15); }
 
     const footRows = Math.max(2, Math.round(0.1 * Hv));
     let xmin = Infinity, xmax = -Infinity, zmin = Infinity, zmax = -Infinity;
@@ -1349,7 +1421,7 @@
       positions, normals: nrm, colors, indices: sn.indices,
       size: { x: mxx - mnx, y: mxy - mny, z: mxz - mnz },
       info: {
-        Hv, vs, Hf, triangles: sn.indices.length / 3, vertices: nv, views: N, direction: best.sign, toleranceUsed: tol,
+        Hv, vs, Hf, triangles: sn.indices.length / 3, vertices: nv, views: N, direction: best.sign, toleranceUsed: tol, carve: carveInfo,
         directionScores: { chosen: best.score, other: best.alt }, colorScores: best.colorScores, footCue: best.cue,
         coherence: { fb: mean(fin.ious), lr: Math.min.apply(null, fin.ious) },
         perView: fin.ious, angles: ths.map((t) => ((((t * best.sign * 180) / Math.PI) % 360) + 360) % 360),
@@ -1451,7 +1523,7 @@
      ==================================================================== */
   // Reconstruit sans socle en ajustant le niveau de detail pour approcher un nombre cible de triangles.
   async function reconstructGame(views, opts, progress) {
-    const o = Object.assign({ targetTris: 30000, texSize: 1024, height: 1 }, opts || {});
+    const o = Object.assign({ targetTris: 30000, texSize: 1024, height: 1, carve: true }, opts || {});
     let d = o.detail || Math.round(144 * Math.sqrt(o.targetTris / 85000));
     let mesh = null;
     for (let it = 0; it < 4; it++) {
@@ -1725,7 +1797,7 @@
     const Lc = [0.35, 0.55, 0.75];
     const ll = Math.hypot(Lc[0], Lc[1], Lc[2]);
     Lc[0] /= ll; Lc[1] /= ll; Lc[2] /= ll;
-    const parts = SAMPLE_PARTS.map((q) => {
+    const parts = (o.parts || SAMPLE_PARTS).map((q) => {
       const a = (q[6] * Math.PI) / 180;
       return { c: [q[0], q[1], q[2]], r: [q[3], q[4], q[5]], cos: Math.cos(a), sin: Math.sin(a), col: q[7] };
     });
