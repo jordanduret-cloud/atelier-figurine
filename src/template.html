@@ -1,0 +1,785 @@
+<title>Atelier Figurine</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Plan de travail : un tapis de decoupe quadrille, des reglages sobres, l'apercu 3D au centre. */
+:root {
+  --bg: #e9ece8;
+  --surface: #f6f8f4;
+  --surface-2: #dfe5df;
+  --ink: #15211c;
+  --muted: #566861;
+  --line: #c4cec7;
+  --accent: #0d7a63;
+  --accent-ink: #ffffff;
+  --grid: rgba(13, 122, 99, 0.12);
+  --grid-strong: rgba(13, 122, 99, 0.24);
+  --check: rgba(21, 33, 28, 0.08);
+  --warn: #9a4b00;
+  --danger: #b3261e;
+  --font-ui: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1512; --surface: #151f1b; --surface-2: #1b2823; --ink: #e4ede8; --muted: #93a69d; --line: #2a3a33;
+    --accent: #3fc9a1; --accent-ink: #052019; --grid: rgba(63, 201, 161, 0.13); --grid-strong: rgba(63, 201, 161, 0.26);
+    --check: rgba(228, 237, 232, 0.08); --warn: #ffb067; --danger: #ff8a80; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1512; --surface: #151f1b; --surface-2: #1b2823; --ink: #e4ede8; --muted: #93a69d; --line: #2a3a33;
+  --accent: #3fc9a1; --accent-ink: #052019; --grid: rgba(63, 201, 161, 0.13); --grid-strong: rgba(63, 201, 161, 0.26);
+  --check: rgba(228, 237, 232, 0.08); --warn: #ffb067; --danger: #ff8a80; color-scheme: dark;
+}
+*, *::before, *::after { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-ui); font-size: 15px; line-height: 1.5;
+  padding-block: 20px 44px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+h1 { font: 600 27px/1.15 var(--font-ui); letter-spacing: -0.015em; margin: 0 0 6px; text-wrap: balance; }
+h2 { font: 600 15px/1.3 var(--font-ui); margin: 0; }
+.lede { margin: 0; color: var(--muted); max-width: 60ch; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 14px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 4px 12px; flex-wrap: wrap; }
+.mono { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.02em; font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); }
+.note { margin: 0; font-size: 13px; color: var(--muted); min-height: 1.4em; }
+.note.warn { color: var(--warn); }
+.note.error { color: var(--danger); }
+.hint { font-size: 13px; color: var(--muted); }
+.row { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 16px;
+  border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink);
+  font: 500 15px var(--font-ui); cursor: pointer; text-align: center; -webkit-tap-highlight-color: transparent;
+}
+.btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.filebtn { position: relative; overflow: hidden; }
+.filebtn input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; font-size: 100px; }
+.btn:disabled { opacity: 0.55; cursor: default; }
+.btn:focus-visible, select:focus-visible, input:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.filebtn:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.sheet-wrap { border-radius: 6px; overflow: hidden; border: 1px solid var(--line); background: var(--surface-2); }
+.sheet { display: block; width: 100%; height: auto; }
+.drop { outline: 2px dashed var(--accent); outline-offset: -6px; }
+.views { display: grid; grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr)); gap: 8px; }
+.cap { font: 500 11px var(--font-mono); color: var(--muted); text-align: center; min-height: 38px; display: flex; align-items: center; justify-content: center; line-height: 1.25; }
+.vcard { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.thumb {
+  display: block; width: 100%; aspect-ratio: 4 / 5; border: 1px solid var(--line); border-radius: 6px; background-color: var(--surface-2);
+  background-image: conic-gradient(var(--check) 25%, transparent 0 50%, var(--check) 0 75%, transparent 0); background-size: 12px 12px;
+}
+select {
+  width: 100%; min-height: 38px; font: 500 13px var(--font-ui); color: var(--ink); background: var(--surface);
+  border: 1px solid var(--line); border-radius: 6px; padding: 0 4px;
+}
+
+details > summary { cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 32px; font: 600 15px var(--font-ui); }
+details > summary::-webkit-details-marker { display: none; }
+details > summary::after { content: '+'; font-family: var(--font-mono); font-size: 18px; color: var(--muted); }
+details[open] > summary::after { content: '\2212'; }
+.fields { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; margin-top: 12px; }
+@media (min-width: 640px) { .fields { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 24px; } }
+.flabel { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 6px; font-weight: 500; font-size: 14px; }
+.flabel output { color: var(--muted); }
+input[type="range"] { width: 100%; accent-color: var(--accent); min-height: 28px; }
+input[type="number"] { width: 100%; min-height: 40px; font: 500 15px var(--font-mono); color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 0 10px; }
+input[type="color"] { width: 100%; min-height: 40px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); padding: 3px; }
+.check { display: flex; align-items: center; gap: 10px; min-height: 40px; font-weight: 500; font-size: 14px; }
+.check input { width: 20px; height: 20px; accent-color: var(--accent); }
+.seg { display: flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button { flex: 1; min-height: 40px; border: 0; border-right: 1px solid var(--line); background: var(--surface); color: var(--ink); font: 500 14px var(--font-ui); padding: 0 6px; cursor: pointer; }
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+
+.stage {
+  position: relative; width: 100%; max-width: 560px; margin-inline: auto; aspect-ratio: 1 / 1; overflow: hidden;
+  border: 1px solid var(--line); border-radius: 8px; background-color: var(--surface-2);
+  background-image:
+    linear-gradient(var(--grid-strong) 1px, transparent 1px), linear-gradient(90deg, var(--grid-strong) 1px, transparent 1px),
+    linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 100px 100px, 100px 100px, 20px 20px, 20px 20px; background-position: center;
+}
+.stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: pan-y; cursor: grab; }
+.stage canvas:active { cursor: grabbing; }
+.stage-msg { position: absolute; left: 0; right: 0; bottom: 0; padding: 10px 14px 12px; background: var(--surface); border-top: 1px solid var(--line); font: 500 13px var(--font-mono); }
+.stage-msg .bar { display: block; height: 3px; margin-top: 8px; background: linear-gradient(90deg, transparent, var(--accent), transparent) no-repeat; background-size: 40% 100%; animation: slide 1.1s linear infinite; }
+@keyframes slide { from { background-position: -40% 0; } to { background-position: 140% 0; } }
+.pbox { width: 100%; min-height: 230px; resize: vertical; font: 400 12.5px/1.5 var(--font-mono); color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; }
+.pbox.small { min-height: 96px; }
+.txt { width: 100%; min-height: 40px; font: 400 15px var(--font-ui); color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 0 10px; }
+.topfields { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+@media (min-width: 640px) { .topfields { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 24px; } .topfields .wide { grid-column: 1 / -1; } }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.chip { min-height: 38px; padding: 0 14px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); font: 500 13px var(--font-ui); cursor: pointer; }
+.chip[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+.actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.actions .btn { flex: 1 1 200px; }
+.export-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+.export-list b { color: var(--ink); font-weight: 600; }
+@media (prefers-reduced-motion: reduce) { .stage-msg .bar { animation: none; background-position: 50% 0; } }
+</style>
+
+<main class="wrap">
+  <header>
+    <h1>Atelier Figurine</h1>
+    <p class="lede">Génère une planche de ton personnage vu sous 4, 8 ou 12 angles avec le prompt ci-dessous, puis charge-la. Tu obtiens une figurine 3D posée sur son socle, à imprimer en STL ou à ouvrir en GLB avec ses couleurs.</p>
+  </header>
+
+  <section class="panel" id="promptPanel" aria-labelledby="h-prompt">
+    <div class="panel-head"><h2 id="h-prompt">1 · Prompt pour ton générateur d’image</h2></div>
+    <div class="topfields">
+      <div class="field"><div class="flabel"><span id="countL">Nombre de vues</span></div><div class="seg" id="countSeg" role="group" aria-labelledby="countL"></div></div>
+      <div class="field" id="rowsField"><div class="flabel"><span id="rowsL">Disposition sur l’image</span></div><div class="seg" id="rowsSeg" role="group" aria-labelledby="rowsL"></div></div>
+      <div class="field wide"><div class="flabel"><label for="desc">Ton personnage (en anglais de préférence)</label></div><input id="desc" class="txt" type="text" maxlength="160" placeholder="ex. space marine in a matte grey armor with orange details"></div>
+    </div>
+    <div>
+      <div class="flabel"><label for="promptOut">Prompt à coller dans le générateur</label></div>
+      <textarea id="promptOut" class="pbox" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+    </div>
+    <div class="actions"><button id="copyPrompt" class="btn primary" type="button">Copier le prompt</button></div>
+    <p id="ratioHint" class="hint" style="margin:0"></p>
+    <details>
+      <summary>Prompt négatif (si ton outil en propose un)</summary>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
+        <label class="sr" for="negOut">Prompt négatif</label>
+        <textarea id="negOut" class="pbox small" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+        <div class="actions"><button id="copyNeg" class="btn" type="button">Copier le prompt négatif</button></div>
+      </div>
+    </details>
+    <p id="copyNote" class="note" role="status"></p>
+  </section>
+
+  <section class="panel" id="sheetPanel" aria-labelledby="h-sheet">
+    <div class="panel-head"><h2 id="h-sheet">2 · Planche</h2><span id="srcName" class="mono muted">Exemple intégré</span></div>
+    <div class="sheet-wrap"><canvas id="sheetCv" class="sheet" width="896" height="330" role="img" aria-label="Planche de personnage avec les quatre vues détectées"></canvas></div>
+    <div id="views" class="views" aria-label="Vues détectées"></div>
+    <p id="analysis" class="note mono"></p>
+    <div class="row" id="angRow" hidden><button id="ang30" class="btn" type="button">Mes vues en 3/4 sont à 30°, pas 45°</button><button id="angReset" class="btn" type="button">Angles réguliers</button></div>
+    <p id="angHint" class="hint" style="margin:0" hidden>Les générateurs ne tiennent pas toujours 45°. Corrige l’angle de chaque vue avec les menus sous les vignettes.</p>
+    <div class="row">
+      <div class="btn filebtn">Choisir une image<input id="file" type="file" accept="image/png,image/jpeg,image/webp,image/*" aria-label="Choisir une image"></div>
+      <span class="hint" id="orderHint">Fond uni de préférence. Tu peux aussi coller une image (Ctrl+V ou appui long dans la page).</span>
+    </div>
+  </section>
+
+  <details class="panel" id="settings">
+    <summary>Réglages</summary>
+    <div class="fields">
+      <div class="field">
+        <div class="flabel"><label for="tol">Tolérance du fond</label><output id="tolOut" class="mono" for="tol"></output></div>
+        <input id="tol" type="range" min="5" max="60" step="1" value="25">
+      </div>
+      <div class="field">
+        <div class="flabel"><span id="splitL">Découpe des vues</span></div>
+        <div class="seg" id="splitSeg" role="group" aria-labelledby="splitL"></div>
+      </div>
+      <div class="field">
+        <div class="flabel"><span id="detailL">Détail du maillage</span></div>
+        <div class="seg" id="detailSeg" role="group" aria-labelledby="detailL"></div>
+      </div>
+      <div class="field" id="roundField">
+        <div class="flabel"><label for="round">Arrondi des formes</label><output id="roundOut" class="mono" for="round"></output></div>
+        <input id="round" type="range" min="0" max="100" step="1" value="70">
+      </div>
+      <div class="field">
+        <div class="flabel"><label for="smooth">Lissage de la surface</label><output id="smoothOut" class="mono" for="smooth"></output></div>
+        <input id="smooth" type="range" min="0" max="100" step="1" value="40">
+      </div>
+      <div class="field">
+        <div class="flabel"><span id="baseL">Socle</span></div>
+        <div class="seg" id="baseSeg" role="group" aria-labelledby="baseL"></div>
+      </div>
+      <div class="field">
+        <div class="flabel"><label for="baseScale">Taille du socle</label><output id="baseScaleOut" class="mono" for="baseScale"></output></div>
+        <input id="baseScale" type="range" min="70" max="170" step="1" value="100">
+      </div>
+      <div class="field">
+        <div class="flabel"><label for="baseColor">Couleur du socle</label></div>
+        <input id="baseColor" type="color" value="#3a3c42">
+      </div>
+      <div class="field">
+        <div class="flabel"><label for="height">Hauteur totale (mm)</label></div>
+        <input id="height" type="number" inputmode="decimal" min="20" max="500" step="1" value="100">
+      </div>
+      <div class="field" id="dirField">
+        <div class="flabel"><span id="dirL">Sens de rotation des vues</span></div>
+        <div class="seg" id="dirSeg" role="group" aria-labelledby="dirL"></div>
+        <p class="hint" style="margin:6px 0 0">Auto : détecté d’après les couleurs. À changer si la figurine a le visage ou le sac du mauvais côté.</p>
+      </div>
+      <div class="field" id="tolField">
+        <label class="check"><input id="tolView" type="checkbox"> Forcer la tolérance aux vues imprécises</label>
+        <p class="hint" style="margin:0">Activée automatiquement quand les vues se recoupent mal. Remplit les trous, mais la forme est un peu plus épaisse.</p>
+      </div>
+      <div class="field" id="flipField">
+        <label class="check"><input id="flip" type="checkbox"> Inverser le sens des profils</label>
+        <p class="hint" style="margin:0">À cocher si le nez, les pieds ou le sac sont du mauvais côté.</p>
+      </div>
+    </div>
+  </details>
+
+  <section class="panel" aria-labelledby="h-prev">
+    <div class="panel-head"><h2 id="h-prev">Aperçu</h2><span id="stats" class="mono muted"></span></div>
+    <div class="stage" id="stage">
+      <canvas id="gl" aria-label="Aperçu 3D de la figurine, glisser pour tourner"></canvas>
+      <div class="stage-msg" id="stageMsg" hidden><span id="stageTxt"></span><i class="bar"></i></div>
+    </div>
+    <div class="chips" role="group" aria-label="Point de vue">
+      <button class="chip" type="button" data-yaw="0">Face</button>
+      <button class="chip" type="button" data-yaw="-1.5708">Gauche</button>
+      <button class="chip" type="button" data-yaw="1.5708">Droite</button>
+      <button class="chip" type="button" data-yaw="3.1416">Dos</button>
+      <button class="chip" type="button" id="autoChip" aria-pressed="true">Rotation</button>
+    </div>
+    <p id="notice" class="note" role="status"></p>
+    <div class="actions"><button id="gen" class="btn primary" type="button">Générer la figurine</button></div>
+  </section>
+
+  <section class="panel" aria-labelledby="h-exp">
+    <div class="panel-head"><h2 id="h-exp">Export</h2><span id="dims" class="mono muted"></span></div>
+    <ul class="export-list">
+      <li><b>STL</b> : maillage fermé en millimètres, axe Z vers le haut, prêt pour le slicer.</li>
+      <li><b>GLB</b> : même modèle avec les couleurs, pour Blender, Windows 3D ou le web.</li>
+    </ul>
+    <div class="actions"><button id="dl" class="btn" type="button" disabled>Télécharger STL + GLB (.zip)</button></div>
+    <p id="dlNote" class="note" role="status">Les deux fichiers arrivent dans un seul .zip : ici, la page ne peut pas proposer un .stl ou un .glb directement.</p>
+  </section>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+/*__ENGINE__*/
+</script>
+<script>
+(function () {
+  'use strict';
+  var A = window.Atelier;
+  var $ = function (id) { return document.getElementById(id); };
+  var clamp = function (v, a, b) { return v < a ? a : v > b ? b : v; };
+  var tick = function () { return new Promise(function (r) { setTimeout(r, 20); }); };
+  var REDUCED = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var ROLE_LABEL = { left: 'Gauche', front: 'Face', right: 'Droite', back: 'Dos' };
+  var ROLE_ORDER = ['left', 'front', 'right', 'back'];
+
+  var S = {
+    isSample: true, angles: null, img: null, srcName: 'Exemple intégré', analysis: null, roles: ['left', 'front', 'right', 'back'],
+    result: null, stale: false, busy: false, sheetSrc: null,
+    cfg: { count: 8, rows: 2, dir: 'auto', tolView: 'auto', desc: '', tol: 25, split: 'auto', flip: false, detail: 144, round: 70, smooth: 40, base: 'round', baseScale: 100, baseColor: '#3a3c42', height: 100 }
+  };
+
+  function cssVar(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+  function hexToRgb(h) { var m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(h); return m ? [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)] : [58, 60, 66]; }
+  function note(text, kind) { var n = $('notice'); n.textContent = text || ''; n.className = 'note' + (kind ? ' ' + kind : ''); }
+  function stageMsg(text) { var m = $('stageMsg'); if (text) { $('stageTxt').textContent = text; m.hidden = false; } else m.hidden = true; }
+  function fmtInt(n) { return n.toLocaleString('fr-FR'); }
+
+  /* ---------- Controles de reglages ---------- */
+  var staleTimer = 0;
+  function markStale() {
+    if (!S.result) return;
+    S.stale = true;
+    $('gen').textContent = 'Régénérer';
+    note('Réglages modifiés. Régénère pour mettre l’aperçu à jour.');
+  }
+  function bindRange(id, key, fmt, effect) {
+    var el = $(id), out = $(id + 'Out');
+    function upd() { S.cfg[key] = +el.value; out.textContent = fmt(+el.value); }
+    el.addEventListener('input', function () { upd(); if (effect) effect(); });
+    upd();
+  }
+  function makeSeg(id, options, key, effect) {
+    var host = $(id);
+    function paint() { Array.prototype.forEach.call(host.children, function (b) { b.setAttribute('aria-pressed', String(String(S.cfg[key]) === b.dataset.v)); }); }
+    options.forEach(function (o) {
+      var b = document.createElement('button');
+      b.type = 'button'; b.textContent = o[1]; b.dataset.v = String(o[0]);
+      b.addEventListener('click', function () {
+        S.cfg[key] = typeof S.cfg[key] === 'number' ? Number(o[0]) : o[0];
+        paint(); if (effect) effect();
+      });
+      host.appendChild(b);
+    });
+    paint();
+  }
+  var reanalyzeTimer = 0;
+  function scheduleReanalyze() { clearTimeout(reanalyzeTimer); reanalyzeTimer = setTimeout(function () { analyze(); markStale(); }, 160); }
+
+  bindRange('tol', 'tol', function (v) { return String(v); }, scheduleReanalyze);
+  bindRange('round', 'round', function (v) { return v + ' %'; }, markStale);
+  bindRange('smooth', 'smooth', function (v) { return v + ' %'; }, markStale);
+  bindRange('baseScale', 'baseScale', function (v) { return v + ' %'; }, markStale);
+  makeSeg('splitSeg', [['auto', 'Automatique'], ['equal', 'Parts égales']], 'split', function () { scheduleReanalyze(); });
+  makeSeg('detailSeg', [[96, 'Rapide'], [144, 'Standard'], [208, 'Fin']], 'detail', markStale);
+  makeSeg('baseSeg', [['round', 'Rond'], ['square', 'Carré'], ['none', 'Aucun']], 'base', markStale);
+  $('baseColor').addEventListener('input', function (e) { S.cfg.baseColor = e.target.value; markStale(); });
+  $('flip').addEventListener('change', function (e) { S.cfg.flip = e.target.checked; markStale(); });
+  $('height').addEventListener('input', function (e) {
+    var v = parseFloat(e.target.value);
+    if (isFinite(v) && v >= 5) { S.cfg.height = clamp(v, 5, 1000); updateStats(); }
+  });
+
+  /* ---------- Image ---------- */
+  function fileToImageData(file) {
+    var load = typeof createImageBitmap === 'function'
+      ? createImageBitmap(file).catch(function () { return viaImage(file); })
+      : viaImage(file);
+    return load.then(function (bmp) {
+      var w0 = bmp.naturalWidth || bmp.width, h0 = bmp.naturalHeight || bmp.height;
+      var big = Math.max(w0, h0), k = big < 1800 ? Math.min(3, 1800 / big) : Math.min(1, 2400 / big);
+      var w = Math.max(1, Math.round(w0 * k)), h = Math.max(1, Math.round(h0 * k));
+      var cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+      var ctx = cv.getContext('2d', { willReadFrequently: true });
+      ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(bmp, 0, 0, w, h);
+      var id = ctx.getImageData(0, 0, w, h);
+      return { width: w, height: h, data: id.data, scale: k > 1 ? k : 1 };
+    });
+  }
+  function viaImage(file) {
+    return new Promise(function (res, rej) {
+      var fr = new FileReader();
+      fr.onload = function () { var im = new Image(); im.onload = function () { res(im); }; im.onerror = rej; im.src = fr.result; };
+      fr.onerror = rej; fr.readAsDataURL(file);
+    });
+  }
+  function setImage(img, name, isSample) {
+    S.isSample = !!isSample; S.angles = null;
+    S.img = img; S.srcName = name; S.result = null; S.stale = false;
+    $('srcName').textContent = name;
+    var c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
+    c.getContext('2d').putImageData(new ImageData(img.data, img.width, img.height), 0, 0);
+    S.sheetSrc = c;
+    S.roles = ROLE_ORDER.slice();
+    analyze();
+  }
+  function analyze() {
+    if (!S.img) return;
+    try {
+      S.analysis = A.analyzeSheet(S.img, { tol: S.cfg.tol, split: S.cfg.split, count: S.cfg.count, rows: S.cfg.count === 4 ? 1 : S.cfg.rows });
+      var n = S.analysis.segs.filter(function (s) { return !s.empty; }).length;
+      $('analysis').textContent = n + ' vues détectées' + (S.analysis.alpha ? ' · transparence utilisée' : '') + (S.cfg.split === 'equal' ? ' · découpe en parts égales' : '');
+      if (S.layoutNote) $('analysis').textContent += ' · ' + S.layoutNote;
+      $('analysis').className = 'note mono';
+      var hs = S.analysis.segs.filter(function (q) { return !q.empty; }).map(function (q) { return q.by1 - q.by0; }).sort(function (x, y) { return x - y; });
+      var hmed = hs.length ? Math.round(hs[hs.length >> 1] / (S.img.scale || 1)) : 0;
+      if (hmed && hmed < 350) { $('analysis').textContent += ' · image petite : ' + hmed + ' px de haut par vue (vise 800 px ou plus)'; $('analysis').className = 'note mono warn'; }
+      renderViews(); drawSheet();
+    } catch (e) {
+      S.analysis = null; $('views').innerHTML = '';
+      $('analysis').textContent = e.message; $('analysis').className = 'note mono error';
+      drawSheet();
+    }
+  }
+  function drawSheet() {
+    var cv = $('sheetCv'), img = S.img;
+    if (!img) return;
+    var k = Math.min(1, 1200 / img.width);
+    cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k);
+    var ctx = cv.getContext('2d');
+    ctx.drawImage(S.sheetSrc, 0, 0, cv.width, cv.height);
+    if (!S.analysis) return;
+    var accent = cssVar('--accent'), ink = cssVar('--accent-ink');
+    var lw = Math.max(2, cv.width / 420), fs = Math.max(11, Math.round(cv.width / 60));
+    ctx.lineWidth = lw; ctx.strokeStyle = accent; ctx.font = '500 ' + fs + 'px ' + cssVar('--font-mono');
+    ctx.textBaseline = 'middle';
+    S.analysis.segs.forEach(function (sg, i) {
+      if (sg.empty) return;
+      var x = sg.bx0 * k, y = sg.by0 * k, w = (sg.bx1 - sg.bx0) * k, h = (sg.by1 - sg.by0) * k;
+      ctx.strokeRect(x, y, w, h);
+      var label = viewLabel(i), tw = ctx.measureText(label).width + 10, th = fs + 8;
+      var ty = y - th < 0 ? y : y - th;
+      ctx.fillStyle = accent; ctx.fillRect(x, ty, tw, th);
+      ctx.fillStyle = ink; ctx.fillText(label, x + 5, ty + th / 2 + 1);
+    });
+  }
+  var NAMES8 = ['Face', 'Av. gauche', 'Gauche', 'Arr. gauche', 'Dos', 'Arr. droite', 'Droite', 'Av. droite'];
+  function angleOf(i) { return S.angles ? S.angles[i] : Math.round((360 * i) / S.cfg.count); }
+  function viewLabel(i) {
+    if (S.cfg.count === 4) return ROLE_LABEL[S.roles[i]];
+    return (i + 1) + ' · ' + angleOf(i) + '°';
+  }
+  function viewCaption(i) {
+    var n = S.cfg.count, a = angleOf(i);
+    var main = { 0: 'Face', 90: 'Gauche', 180: 'Dos', 270: 'Droite' }[a];
+    if (n === 8) return a + '° ' + NAMES8[i];
+    return a + '°' + (main ? ' ' + main : '');
+  }
+  function renderViews() {
+    var host = $('views'); host.innerHTML = '';
+    host.style.setProperty('--cols', S.cfg.count === 12 ? 6 : 4);
+    S.analysis.segs.forEach(function (sg, i) {
+      var card = document.createElement('div'); card.className = 'vcard';
+      var cv = document.createElement('canvas'); cv.className = 'thumb'; cv.width = 120; cv.height = 150;
+      cv.setAttribute('role', 'img'); cv.setAttribute('aria-label', 'Vue ' + (i + 1));
+      card.appendChild(cv);
+      if (S.cfg.count === 4) {
+        var sel = document.createElement('select'); sel.setAttribute('aria-label', 'Rôle de la vue ' + (i + 1));
+        ROLE_ORDER.forEach(function (r) { sel.appendChild(new Option(ROLE_LABEL[r], r)); });
+        sel.value = S.roles[i]; sel.dataset.i = String(i);
+        sel.addEventListener('change', function () { swapRole(i, sel.value); });
+        card.appendChild(sel);
+      } else {
+        var as = document.createElement('select'); as.setAttribute('aria-label', 'Angle de la vue ' + (i + 1));
+        for (var a = 0; a < 360; a += 15) as.appendChild(new Option(a + '°', String(a)));
+        as.value = String(angleOf(i));
+        as.addEventListener('change', function () {
+          if (!S.angles) { S.angles = []; for (var q = 0; q < S.cfg.count; q++) S.angles.push(Math.round((360 * q) / S.cfg.count)); }
+          S.angles[i] = Number(as.value); drawSheet(); markStale();
+        });
+        card.appendChild(as);
+      }
+      host.appendChild(card);
+      drawThumb(cv, sg);
+    });
+  }
+  function swapRole(i, role) {
+    var j = S.roles.indexOf(role);
+    if (j >= 0 && j !== i) S.roles[j] = S.roles[i];
+    S.roles[i] = role;
+    Array.prototype.forEach.call($('views').querySelectorAll('select'), function (s, k) { s.value = S.roles[k]; });
+    drawSheet(); markStale();
+  }
+  function drawThumb(cv, sg) {
+    var ctx = cv.getContext('2d'); ctx.clearRect(0, 0, cv.width, cv.height);
+    if (sg.empty) return;
+    var w = sg.bx1 - sg.bx0, h = sg.by1 - sg.by0;
+    var tmp = document.createElement('canvas'); tmp.width = w; tmp.height = h;
+    var tctx = tmp.getContext('2d'), id = tctx.createImageData(w, h);
+    var iw = S.img.width, d = S.img.data, m = S.analysis.mask;
+    for (var y = 0; y < h; y++) for (var x = 0; x < w; x++) {
+      var gx = sg.bx0 + x, si = (sg.by0 + y) * iw + gx;
+      if (m[si] && gx >= sg.x0 && gx < sg.x1 && sg.by0 + y >= sg.y0 && sg.by0 + y < sg.y1) {
+        var di = (y * w + x) * 4;
+        id.data[di] = d[si * 4]; id.data[di + 1] = d[si * 4 + 1]; id.data[di + 2] = d[si * 4 + 2]; id.data[di + 3] = 255;
+      }
+    }
+    tctx.putImageData(id, 0, 0);
+    var k = Math.min((cv.width - 8) / w, (cv.height - 8) / h);
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(tmp, (cv.width - w * k) / 2, cv.height - 4 - h * k, w * k, h * k);
+  }
+
+  /* ---------- Apercu 3D ---------- */
+  var GL = { ok: false, yaw: 0, pitch: 0.1, dist: 3.1, target: null, auto: !REDUCED, drag: false, idle: 0, pinch: 0, mesh: null };
+  function initGL() {
+    var THREE = window.THREE;
+    if (!THREE) return;
+    try { GL.renderer = new THREE.WebGLRenderer({ canvas: $('gl'), antialias: true, alpha: true }); } catch (e) { return; }
+    var r = GL.renderer;
+    r.setClearColor(0x000000, 0); r.outputEncoding = THREE.sRGBEncoding;
+    GL.scene = new THREE.Scene();
+    GL.camera = new THREE.PerspectiveCamera(30, 1, 0.1, 50);
+    GL.scene.add(new THREE.HemisphereLight(0xffffff, 0x9aa5a0, 0.95));
+    var key = new THREE.DirectionalLight(0xffffff, 0.85); key.position.set(2.5, 3, 4); GL.scene.add(key);
+    var fill = new THREE.DirectionalLight(0xffffff, 0.3); fill.position.set(-3, 1, -2); GL.scene.add(fill);
+    GL.group = new THREE.Group(); GL.scene.add(GL.group);
+    GL.ok = true;
+    resizeGL();
+    if (window.ResizeObserver) new ResizeObserver(resizeGL).observe($('stage')); else window.addEventListener('resize', resizeGL);
+
+    var cv = $('gl'), pts = new Map();
+    cv.addEventListener('pointerdown', function (e) {
+      try { cv.setPointerCapture(e.pointerId); } catch (x) { /* ignore */ }
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); GL.drag = true; GL.target = null;
+      if (pts.size === 2) { var v = Array.from(pts.values()); GL.pinch = Math.hypot(v[0].x - v[1].x, v[0].y - v[1].y); }
+    });
+    cv.addEventListener('pointermove', function (e) {
+      var p = pts.get(e.pointerId); if (!p) return;
+      var dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY;
+      if (pts.size === 1) { GL.yaw += dx * 0.012; GL.pitch = clamp(GL.pitch + dy * 0.006, -0.45, 1.0); }
+      else if (pts.size === 2) {
+        var v = Array.from(pts.values()), d = Math.hypot(v[0].x - v[1].x, v[0].y - v[1].y);
+        if (GL.pinch > 0 && d > 0) GL.dist = clamp(GL.dist * GL.pinch / d, 1.7, 6);
+        GL.pinch = d;
+      }
+    });
+    function up(e) { pts.delete(e.pointerId); if (pts.size < 2) GL.pinch = 0; if (!pts.size) { GL.drag = false; GL.idle = performance.now(); } }
+    cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
+    cv.addEventListener('wheel', function (e) { e.preventDefault(); GL.dist = clamp(GL.dist * (1 + e.deltaY * 0.001), 1.7, 6); }, { passive: false });
+    requestAnimationFrame(loop);
+  }
+  function resizeGL() {
+    if (!GL.ok) return;
+    var st = $('stage'), w = st.clientWidth, h = st.clientHeight;
+    if (!w || !h) return;
+    GL.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    GL.renderer.setSize(w, h, false);
+    GL.camera.aspect = w / h; GL.camera.updateProjectionMatrix();
+  }
+  function loop() {
+    requestAnimationFrame(loop);
+    if (!GL.ok || !GL.mesh) return;
+    if (GL.target !== null) {
+      var d = Math.atan2(Math.sin(GL.target - GL.yaw), Math.cos(GL.target - GL.yaw));
+      GL.yaw += d * 0.18;
+      if (Math.abs(d) < 0.004) { GL.yaw = GL.target; GL.target = null; GL.idle = performance.now(); }
+    } else if (!GL.drag && GL.auto && performance.now() - GL.idle > 1200) GL.yaw += 0.006;
+    GL.group.rotation.set(GL.pitch, GL.yaw, 0, 'YXZ');
+    GL.camera.position.set(0, 0, GL.dist); GL.camera.lookAt(0, 0, 0);
+    GL.renderer.render(GL.scene, GL.camera);
+  }
+  var SRGB = new Float32Array(256);
+  for (var q = 0; q < 256; q++) { var c = q / 255; SRGB[q] = c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
+  function showMesh(res) {
+    var THREE = window.THREE;
+    if (!GL.ok) return;
+    if (GL.mesh) { GL.group.remove(GL.mesh); GL.mesh.geometry.dispose(); GL.mesh.material.dispose(); GL.mesh = null; }
+    var s = 1 / res.size.y, n = res.positions.length;
+    var pos = new Float32Array(n), col = new Float32Array(n);
+    for (var i = 0; i < n; i++) { pos[i] = res.positions[i] * s; col[i] = SRGB[res.colors[i]]; }
+    var g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('normal', new THREE.BufferAttribute(res.normals, 3));
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    g.setIndex(new THREE.BufferAttribute(res.indices, 1));
+    var m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.78, metalness: 0 }));
+    m.position.y = -0.5;
+    GL.group.add(m); GL.mesh = m;
+    GL.idle = performance.now();
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('.chip[data-yaw]'), function (b) {
+    b.addEventListener('click', function () { GL.target = parseFloat(b.dataset.yaw); GL.pitch = 0.1; });
+  });
+  $('autoChip').setAttribute('aria-pressed', String(GL.auto));
+  $('autoChip').addEventListener('click', function () {
+    GL.auto = !GL.auto; $('autoChip').setAttribute('aria-pressed', String(GL.auto)); GL.idle = performance.now();
+  });
+
+  /* ---------- Generation ---------- */
+  function updateStats() {
+    var r = S.result;
+    if (!r) { $('stats').textContent = ''; $('dims').textContent = ''; return; }
+    var k = S.cfg.height / r.size.y;
+    $('stats').textContent = fmtInt(r.info.triangles) + ' triangles';
+    $('dims').textContent = (r.size.x * k).toFixed(1) + ' × ' + (r.size.z * k).toFixed(1) + ' × ' + S.cfg.height + ' mm';
+  }
+  function setBusy(b) { S.busy = b; $('gen').disabled = b; $('dl').disabled = b || !S.result; }
+  function generate() {
+    if (S.busy || !S.analysis) return Promise.resolve();
+    setBusy(true); note('');
+    return tick().then(function () {
+      stageMsg('Préparation des vues…');
+      return tick();
+    }).then(function () {
+      var multi = S.cfg.count !== 4;
+      var views = multi ? A.prepareViewList(S.img, S.analysis.mask, S.analysis.segs) : A.prepareViews(S.img, S.analysis.mask, S.analysis.segs, S.roles);
+      var o = {
+        detail: S.cfg.detail, roundness: S.cfg.round / 100, smooth: S.cfg.smooth / 100, base: S.cfg.base,
+        baseScale: S.cfg.baseScale / 100, baseColor: hexToRgb(S.cfg.baseColor), flipSides: S.cfg.flip,
+        direction: S.cfg.dir === 'auto' ? 'auto' : Number(S.cfg.dir), tolerance: S.cfg.tolView === true ? 1 : 'auto', angles: (S.cfg.count !== 4 && S.angles) ? S.angles : null
+      };
+      return (multi ? A.reconstructN : A.reconstruct)(views, o, function (m) { stageMsg(m); return tick(); });
+    }).then(function (res) {
+      S.result = res; S.stale = false;
+      showMesh(res); updateStats();
+      $('gen').textContent = 'Régénérer';
+      if (res.info.views) {
+        var mean = Math.round(res.info.coherence.fb * 100), worst = Math.round(res.info.coherence.lr * 100);
+        var wi = res.info.perView.indexOf(Math.min.apply(null, res.info.perView)) + 1;
+        var sens = res.info.direction === 1 ? 'sens normal' : 'sens inversé';
+        if (mean < 85 || worst < 75) note('Les vues se recoupent mal (moyenne ' + mean + ' %, la plus faible : vue ' + wi + ' à ' + worst + ' %). Vérifie la découpe et les angles (menus sous les vignettes). Rotation détectée : ' + sens + '.', 'warn');
+        else note('Vues cohérentes : moyenne ' + mean + ' %, la plus faible ' + worst + ' % (vue ' + wi + '). Rotation : ' + sens + '.');
+      } else {
+        var fb = Math.round(res.info.coherence.fb * 100), lr = Math.round(res.info.coherence.lr * 100);
+        if (fb < 80 || lr < 80) {
+          note('Les vues se recouvrent mal (face/dos ' + fb + ' %, gauche/droite ' + lr + ' %). Vérifie le rôle de chaque vue et la découpe ci-dessus.', 'warn');
+        } else {
+          note('Vues cohérentes : face/dos ' + fb + ' %, gauche/droite ' + lr + ' %.');
+        }
+      }
+    }).catch(function (e) {
+      console.error(e);
+      note(e && e.message ? e.message : 'La génération a échoué.', 'error');
+    }).then(function () {
+      stageMsg(''); setBusy(false);
+    });
+  }
+  $('gen').addEventListener('click', function () { generate(); });
+
+  /* ---------- Export ---------- */
+  function getDownloads() {
+    try { return window.claude && window.claude.use ? window.claude.use('downloads') : Promise.resolve(null); }
+    catch (e) { return Promise.resolve(null); }
+  }
+  $('dl').addEventListener('click', function () {
+    if (!S.result || S.busy) return;
+    var btn = $('dl'), msg = $('dlNote');
+    btn.disabled = true; msg.className = 'note'; msg.textContent = 'Préparation des fichiers…';
+    tick().then(function () {
+      return getDownloads();
+    }).then(function (dl) {
+      if (!dl) { msg.textContent = 'Le téléchargement n’est pas disponible dans cet affichage. Ouvre la page directement dans Claude.'; msg.className = 'note warn'; return null; }
+      var stl = A.exportSTL(S.result, S.cfg.height), glb = A.exportGLB(S.result, S.cfg.height);
+      var zip = A.makeZip([{ name: 'figurine.stl', data: new Uint8Array(stl) }, { name: 'figurine.glb', data: new Uint8Array(glb) }]);
+      return dl.save({ filename: 'figurine-3d.zip', data: new Blob([zip], { type: 'application/zip' }) }).then(function () {
+        msg.textContent = 'Fichier enregistré : figurine.stl et figurine.glb dans le .zip, à ' + S.cfg.height + ' mm de haut.';
+      });
+    }).catch(function (e) {
+      msg.className = 'note error';
+      msg.textContent = e && e.code === 'declined' ? 'Téléchargement annulé.' : 'Le téléchargement a échoué' + (e && e.code ? ' (' + e.code + ').' : '.');
+    }).then(function () { btn.disabled = !S.result || S.busy; });
+  });
+
+  /* ---------- Fichier : choix et glisser-deposer ---------- */
+  function openFile(f) {
+    if (!f) return;
+    stageMsg('Lecture de l’image…');
+    fileToImageData(f).then(function (img) {
+      setImage(img, f.name || 'Image collée', false);
+      S.layoutNote = '';
+      var lay = null;
+      try { lay = A.detectLayout(img, S.cfg.tol); } catch (x) { lay = null; }
+      if (lay && (lay.count !== S.cfg.count || (lay.count !== 4 && lay.rows !== S.cfg.rows))) {
+        S.layoutNote = 'disposition détectée : ' + lay.count + ' vues' + (lay.count === 4 ? '' : ' sur ' + lay.rows + ' ligne' + (lay.rows > 1 ? 's' : ''));
+        var q = function (id, v) { var b = document.querySelector('#' + id + ' button[data-v="' + v + '"]'); if (b) b.click(); };
+        q('countSeg', lay.count); if (lay.count !== 4) q('rowsSeg', lay.rows);
+      } else if (lay) { S.layoutNote = 'disposition confirmée'; analyze(); }
+      return S.analysis ? generate() : null;
+    }).catch(function () {
+      note('Impossible de lire cette image. Essaie un PNG ou un JPEG.', 'error');
+    }).then(function () { stageMsg(''); });
+  }
+  $('file').addEventListener('click', function () { $('analysis').textContent = 'Ouverture du sélecteur…'; $('analysis').className = 'note mono'; });
+  $('file').addEventListener('change', function (e) { var f = e.target.files && e.target.files[0]; e.target.value = ''; if (f) { $('analysis').textContent = 'Lecture de ' + f.name + '…'; } openFile(f); });
+  document.addEventListener('paste', function (e) {
+    var items = (e.clipboardData && e.clipboardData.items) || [];
+    for (var i = 0; i < items.length; i++) if (items[i].type.indexOf('image') === 0) { e.preventDefault(); openFile(items[i].getAsFile()); return; }
+  });
+  var drop = $('sheetPanel');
+  ['dragenter', 'dragover'].forEach(function (t) { drop.addEventListener(t, function (e) { e.preventDefault(); drop.classList.add('drop'); }); });
+  ['dragleave', 'drop'].forEach(function (t) { drop.addEventListener(t, function (e) { e.preventDefault(); drop.classList.remove('drop'); }); });
+  drop.addEventListener('drop', function (e) { var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]; openFile(f); });
+  if (window.matchMedia) {
+    var mq = window.matchMedia('(prefers-color-scheme: dark)');
+    var rd = function () { drawSheet(); };
+    if (mq.addEventListener) mq.addEventListener('change', rd); else if (mq.addListener) mq.addListener(rd);
+  }
+
+
+  /* ---------- Mode (4 / 8 / 12 vues) et prompt ---------- */
+  function makeSample() {
+    var n = S.cfg.count;
+    if (n === 4) return A.renderSampleSheet();
+    var angles = []; for (var i = 0; i < n; i++) angles.push((360 * i) / n);
+    return A.renderSampleSheet({ angles: angles, rows: S.cfg.rows, vw: n === 12 ? 170 : 200, ss: 2 });
+  }
+  var DEFAULT_DESC = 'a compact sci-fi explorer in a matte graphite exosuit with orange accent panels, rounded helmet with a tinted visor, small backpack, chunky boots';
+  var NAMES8_EN = ['front view', 'front-left three-quarter view', 'left side view', 'back-left three-quarter view', 'back view', 'back-right three-quarter view', 'right side view', 'front-right three-quarter view'];
+  function nameEn(i, n) {
+    if (n === 4) return ['left side view', 'front view', 'right side view', 'back view'][i];
+    if (n === 8) return NAMES8_EN[i];
+    var a = (360 * i) / n, main = { 0: 'front view', 90: 'left side view', 180: 'back view', 270: 'right side view' }[a];
+    if (main) return main;
+    var q = Math.floor(a / 90), f = a % 90;
+    var pairs = [['front', 'left side'], ['left side', 'back'], ['back', 'right side'], ['right side', 'front']][q];
+    return 'view at ' + a + ' degrees, between the ' + pairs[0] + ' and the ' + pairs[1] + (f < 45 ? ', closer to the ' + pairs[0] : f > 45 ? ', closer to the ' + pairs[1] : '');
+  }
+  function fmtOf(n, rows) {
+    if (n === 4) return { en: '21:9 landscape, 3840 x 1646 pixels', fr: '21:9 (3840 × 1646 px)', fig: 1300 };
+    if (rows === 2) return { en: '16:9 landscape, 3840 x 2160 pixels', fr: '16:9 (3840 × 2160 px)', fig: 900 };
+    return { en: '32:9 ultra-wide landscape, 5120 x 1440 pixels', fr: '32:9 (5120 × 1440 px)', fig: 1200 };
+  }
+  function buildPrompt() {
+    var n = S.cfg.count, rows = n === 4 ? 1 : S.cfg.rows, per = Math.ceil(n / rows);
+    var desc = (S.cfg.desc || '').trim() || DEFAULT_DESC;
+    var fm = fmtOf(n, rows);
+    var p = 'Image format: ' + fm.en + ', ultra high resolution, sharp crisp details. Character turnaround reference sheet of ' + desc + '. ';
+    p += n + ' views of the SAME character in ' + (rows === 1 ? 'one single horizontal row' : rows + ' rows of ' + per) + ', same scale in every view, evenly spaced, no overlap, a clear empty gap between every view.\n\n';
+    var step = 360 / n;
+    if (n === 4) p += 'Order from left to right: ';
+    else p += 'The character turns in place on a turntable in steps of ' + step + ' degrees. "Left" always means the character\'s own left. Order:\n';
+    for (var r = 0; r < rows; r++) {
+      var items = [];
+      for (var i = r * per; i < Math.min(n, (r + 1) * per); i++) items.push('(' + (i + 1) + ') ' + nameEn(i, n));
+      if (n === 4) p += items.join(', ') + '.\n';
+      else p += (rows > 1 ? 'Row ' + (r + 1) + ', left to right: ' : 'Left to right: ') + items.join('; ') + '.\n';
+    }
+    p += '\nStrict orthographic projection: no perspective, no foreshortening, camera at chest height, same distance and same framing for every view. Full body from head to toe in each view, feet on the same horizontal baseline ' + (rows > 1 ? 'in each row' : 'in every view') + '.\n';
+    p += 'Neutral A-pose: arms slightly away from the body (about 25 degrees), legs slightly apart, head level, looking straight ahead, relaxed open hands, neutral expression. Same pose in every view.\n';
+    p += 'Simple solid shapes, chunky readable proportions, no cape, no loose hair, no flowing cloth, no weapon held away from the body. Matte materials, flat soft even lighting, no cast shadows, no strong highlights or reflections, consistent colors across all views.\n';
+    p += 'Background: perfectly plain, uniform, flat light grey (#F3F3F0), no gradient, no floor, no ground shadow, no text, no labels, no grid, no frame, nothing else in the image.\n';
+    p += 'Output: ' + fm.en + ', each figure at least ' + fm.fig + ' pixels tall, filling the full height of its cell with a small margin, high resolution.';
+    return p;
+  }
+  var NEG = 'perspective, three-quarter camera angle on a single view, dynamic pose, action pose, crossed arms, arms touching the body, cropped feet, cropped head, overlapping figures, different characters between views, different outfit between views, shadows on the floor, gradient background, text, captions, numbers, watermark, extra limbs, long cape, loose hair, flowing fabric';
+  function ratioHint() {
+    var n = S.cfg.count, rows = n === 4 ? 1 : S.cfg.rows, fm = fmtOf(n, rows);
+    return 'Le prompt demande déjà le format ' + fm.fr + ' en résolution maximale. Règle aussi la même taille dans les options de ton générateur (format d’image et qualité 2K ou 4K) : certains outils ignorent la taille écrite dans le texte. Si le résultat est plus petit, agrandis-le avec un outil d’upscale avant de le charger.';
+  }
+  function updatePrompt() {
+    $('promptOut').value = buildPrompt();
+    $('negOut').value = NEG;
+    $('ratioHint').textContent = ratioHint();
+    $('rowsField').hidden = S.cfg.count === 4;
+    $('angRow').hidden = S.cfg.count !== 8; $('angHint').hidden = S.cfg.count === 4;
+    var multi = S.cfg.count !== 4;
+    $('roundField').hidden = multi; $('flipField').hidden = multi;
+    $('dirField').hidden = !multi; $('tolField').hidden = !multi;
+    $('orderHint').textContent = multi
+      ? 'Les ' + S.cfg.count + ' vues se lisent de gauche à droite' + (S.cfg.rows === 2 ? ', ligne du haut puis ligne du bas' : '') + ' : face, puis rotation vers la gauche du personnage. Fond uni de préférence.'
+      : 'De gauche à droite : gauche, face, droite, dos. Fond uni de préférence.';
+  }
+  function modeChanged() {
+    S.angles = null;
+    updatePrompt();
+    if (S.isSample) { stageMsg('Préparation de l’exemple…'); tick().then(function () { setImage(makeSample(), 'Exemple intégré', true); markStale(); stageMsg(''); }); }
+    else { analyze(); markStale(); }
+  }
+  $('ang30').addEventListener('click', function () {
+    S.angles = [0, 30, 90, 150, 180, 210, 270, 330];
+    if (S.analysis) { renderViews(); drawSheet(); }
+    $('ang30').setAttribute('aria-pressed', 'true'); $('angReset').setAttribute('aria-pressed', 'false');
+    note('Angles réglés : 0°, 30°, 90°, 150°, 180°, 210°, 270°, 330°. Régénération…');
+    if (S.analysis && !S.busy) generate();
+  });
+  $('angReset').addEventListener('click', function () {
+    S.angles = null;
+    if (S.analysis) { renderViews(); drawSheet(); }
+    $('ang30').setAttribute('aria-pressed', 'false'); $('angReset').setAttribute('aria-pressed', 'true');
+    note('Angles réguliers rétablis. Régénération…');
+    if (S.analysis && !S.busy) generate();
+  });
+  makeSeg('countSeg', [[4, '4 vues'], [8, '8 vues'], [12, '12 vues']], 'count', modeChanged);
+  makeSeg('rowsSeg', [[1, '1 ligne'], [2, '2 lignes']], 'rows', modeChanged);
+  makeSeg('dirSeg', [['auto', 'Auto'], ['1', 'Normal'], ['-1', 'Inversé']], 'dir', markStale);
+  $('tolView').addEventListener('change', function (e) { S.cfg.tolView = e.target.checked ? true : 'auto'; markStale(); });
+  $('desc').addEventListener('input', function (e) { S.cfg.desc = e.target.value; $('promptOut').value = buildPrompt(); });
+  function copyText(id, label) {
+    var el = $(id), note2 = $('copyNote');
+    function ok() { note2.className = 'note'; note2.textContent = label + ' copié.'; }
+    function manual() { note2.className = 'note warn'; note2.textContent = 'La copie automatique est bloquée ici. Le texte est sélectionné : appui long dessus puis « Copier ».'; }
+    var done = false;
+    try {
+      el.focus(); el.select(); el.setSelectionRange(0, el.value.length);
+      done = !!(document.execCommand && document.execCommand('copy'));
+    } catch (x) { done = false; }
+    if (done) { ok(); return; }
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(el.value).then(ok, manual); return; }
+    } catch (e) { /* ignore */ }
+    manual();
+  }
+  ['promptOut', 'negOut'].forEach(function (id) { $(id).addEventListener('focus', function (e) { var t = e.target; setTimeout(function () { try { t.select(); } catch (x) { /* ignore */ } }, 0); }); });
+  $('copyPrompt').addEventListener('click', function () { copyText('promptOut', 'Prompt'); });
+  $('copyNeg').addEventListener('click', function () { copyText('negOut', 'Prompt négatif'); });
+  updatePrompt();
+
+  /* ---------- Demarrage : exemple integre ---------- */
+  initGL();
+  if (!GL.ok) note('L’aperçu 3D n’a pas pu démarrer sur cet appareil. La génération et l’export fonctionnent quand même.', 'warn');
+  stageMsg('Préparation de l’exemple…');
+  tick().then(tick).then(function () {
+    setImage(makeSample(), 'Exemple intégré', true);
+    return S.analysis ? generate() : null;
+  }).catch(function (e) { console.error(e); note('Le chargement de l’exemple a échoué. Choisis une image pour commencer.', 'error'); })
+    .then(function () { stageMsg(''); });
+})();
+</script>
