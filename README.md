@@ -42,3 +42,7 @@ Depuis les réponses du jeu (`docs/reponses-jeu.md`), la page propose un export 
 
 Code : `reconstructGame`, `buildAtlasMesh`, `exportGLBTextured` dans `src/engine.js`. Tests : `tests/test9.js` (moteur), `tests/ui-game.js` (navigateur).
 Limites : les toits et faces horizontales sont de simples aplats de couleur ; pas de LOD, FBX ni squelette (inutiles pour l'instant).
+
+## Appli installable (GitHub Pages)
+
+`node build.js` produit aussi `site/` (PWA : manifeste, icônes, service worker, three.js embarqué). Le workflow `.github/workflows/pages.yml` la publie à chaque envoi sur `main` ; réglage unique : Settings → Pages → Source : « GitHub Actions ». Adresse : https://jordanduret-cloud.github.io/atelier-figurine/. Hors artifact, le téléchargement passe par un lien classique.

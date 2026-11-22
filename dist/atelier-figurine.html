@@ -2400,8 +2400,16 @@ input[type="color"] { width: 100%; min-height: 40px; border: 1px solid var(--lin
 
   /* ---------- Export ---------- */
   function getDownloads() {
-    try { return window.claude && window.claude.use ? window.claude.use('downloads') : Promise.resolve(null); }
-    catch (e) { return Promise.resolve(null); }
+    try { if (window.claude && window.claude.use) return window.claude.use('downloads'); }
+    catch (e) { /* repli ci-dessous */ }
+    // Hors artifact (appli installée) : téléchargement classique par lien.
+    return Promise.resolve({ save: function (o) {
+      return new Promise(function (res) {
+        var u = URL.createObjectURL(o.data), a = document.createElement('a');
+        a.href = u; a.download = o.filename; document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(function () { URL.revokeObjectURL(u); }, 20000); res();
+      });
+    } });
   }
   $('dl').addEventListener('click', function () {
     if (!S.result || S.busy) return;

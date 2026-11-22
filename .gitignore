@@ -1,7 +1,8 @@
-node_modules/
-*.rgba
-*.f32
-*.u8
-*.u32
-*.png
 *.bak.*
+*.f32
+*.png
+*.rgba
+*.u32
+*.u8
+node_modules/
+site/
