@@ -28,3 +28,17 @@ Le volume vient uniquement des silhouettes : les creux (bouche, cour intérieure
 2. Faire de cet outil l'étape de préparation : détourage, découpe, contrôle de cohérence, prompts.
 3. Sortie adaptée aux moteurs de jeu : texture UV cuite, maillage simplifié + LOD, export glTF/FBX, pivot aux pieds, échelle.
 4. Personnages : rig automatique (pose en A), bâtiments : éléments modulaires.
+
+
+## Export jeu (Cosmos Colonies)
+
+Depuis les réponses du jeu (`docs/reponses-jeu.md`), la page propose un export dédié :
+
+- GLB 2.0 **texturé** (UV + une texture couleur 1024 px bâtiment / 2048 px personnage), sans socle ;
+- maillage allégé automatiquement vers la cible : bâtiment 30 000, personnage 50 000, vaisseau 80 000 triangles ;
+- repère : Y vers le haut, pieds à Y = 0, centre de l'emprise en X = Z = 0, face avant vers +Z, hauteur 1 (le jeu recadre) ;
+- nom `<monde>-<type>.glb` (ex. `mars-caserne.glb`), livré dans un .zip ;
+- 4 vues : angles déduits des rôles (face 0°, gauche 90°, dos 180°, droite 270°).
+
+Code : `reconstructGame`, `buildAtlasMesh`, `exportGLBTextured` dans `src/engine.js`. Tests : `tests/test9.js` (moteur), `tests/ui-game.js` (navigateur).
+Limites : les toits et faces horizontales sont de simples aplats de couleur ; pas de LOD, FBX ni squelette (inutiles pour l'instant).

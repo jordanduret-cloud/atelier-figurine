@@ -1353,7 +1353,7 @@
         directionScores: { chosen: best.score, other: best.alt }, colorScores: best.colorScores, footCue: best.cue,
         coherence: { fb: mean(fin.ious), lr: Math.min.apply(null, fin.ious) },
         perView: fin.ious, angles: ths.map((t) => ((((t * best.sign * 180) / Math.PI) % 360) + 360) % 360),
-        grid: [Gx, Gy, Gz], hb, emb, yf0, withBase,
+        grid: [Gx, Gy, Gz], hb, emb, yf0, withBase, ths: Array.from(ths),
         origin: { x: bcx - Gx / 2, z: bcz - Gz / 2, yFeet: yf0 - yBottom },
       },
     };
@@ -1442,6 +1442,187 @@
     u8.set(new Uint8Array(mesh.normals.buffer, mesh.normals.byteOffset, nv * 12), o); o += nv * 12;
     u8.set(new Uint8Array(col.buffer), o); o += nv * 12;
     u8.set(new Uint8Array(mesh.indices.buffer, mesh.indices.byteOffset, ni * 4), o);
+    return out;
+  }
+
+
+  /* ====================================================================
+     9b. Export jeu : maillage allege + atlas de texture (UV) + GLB texture
+     ==================================================================== */
+  // Reconstruit sans socle en ajustant le niveau de detail pour approcher un nombre cible de triangles.
+  async function reconstructGame(views, opts, progress) {
+    const o = Object.assign({ targetTris: 30000, texSize: 1024, height: 1 }, opts || {});
+    let d = o.detail || Math.round(144 * Math.sqrt(o.targetTris / 85000));
+    let mesh = null;
+    for (let it = 0; it < 4; it++) {
+      d = clamp(Math.round(d), 48, 280);
+      mesh = await reconstructN(views, Object.assign({}, o, { base: 'none', detail: d }), progress);
+      const t = mesh.info.triangles;
+      if (t <= o.targetTris * 1.15 && (t >= o.targetTris * 0.8 || d >= 280)) break;
+      if (d <= 48 && t > o.targetTris) break;
+      d = d * Math.sqrt(o.targetTris / t);
+    }
+    if (progress) await progress('Atlas de texture…');
+    return buildAtlasMesh(mesh, views, o);
+  }
+
+  function buildAtlasMesh(mesh, views, o) {
+    const info = mesh.info, ths = info.ths, vs = info.vs, N = views.length;
+    const c = ths.map(Math.cos), s = ths.map(Math.sin);
+    const P = mesh.positions, I = mesh.indices, NT = I.length / 3;
+    const oX = info.origin.x, oZ = info.origin.z, yF = info.origin.yFeet;
+    const sc = (o.height || 1) / mesh.size.y;
+    const pr = (i, k) => { // pixel (colonne, ligne) du sommet i dans la vue k
+      const X = (P[i * 3] + oX) * vs, Y = (P[i * 3 + 1] - yF) * vs, Z = (P[i * 3 + 2] + oZ) * vs, v = views[k];
+      return [v.cx + (X * c[k] - Z * s[k] - v.shift * vs) / v.sc, v.bottom - Y / v.sc];
+    };
+    // 1) vue de chaque triangle (-1 = aplat de couleur : toits et faces horizontales)
+    const pick = new Int16Array(NT), cnt = new Uint32Array(N);
+    for (let t = 0; t < NT; t++) {
+      const a = I[t * 3], b = I[t * 3 + 1], cc = I[t * 3 + 2];
+      const ux = P[b * 3] - P[a * 3], uy = P[b * 3 + 1] - P[a * 3 + 1], uz = P[b * 3 + 2] - P[a * 3 + 2];
+      const wx = P[cc * 3] - P[a * 3], wy = P[cc * 3 + 1] - P[a * 3 + 1], wz = P[cc * 3 + 2] - P[a * 3 + 2];
+      let nx = uy * wz - uz * wy, ny = uz * wx - ux * wz, nz = ux * wy - uy * wx;
+      const l = Math.hypot(nx, ny, nz) || 1; nx /= l; ny /= l; nz /= l;
+      let bk = -1, bs = 0.3;
+      for (let k = 0; k < N; k++) {
+        const d = nx * s[k] + nz * c[k];
+        if (d <= 0.3) continue;
+        let out = 0;
+        for (const i of [a, b, cc]) { const q = pr(i, k), v = views[k]; if (q[0] < 0 || q[0] > v.w || q[1] < 0 || q[1] > v.h) out += 1.5; else if (!v.mask[Math.min(v.h - 1, q[1] | 0) * v.w + Math.min(v.w - 1, q[0] | 0)]) out += 1; }
+        const sco = d - 0.25 * out;
+        if (sco > bs) { bs = sco; bk = k; }
+      }
+      pick[t] = bk; if (bk >= 0) cnt[bk]++;
+    }
+    // 2) taille de l'atlas : echelle commune (jamais > 1), rangement par etages
+    const AW = o.texSize, STRIP = 32, GUT = 2;
+    const used = []; for (let k = 0; k < N; k++) if (cnt[k]) used.push(k);
+    used.sort((x, y) => views[y].h - views[x].h);
+    let scale = 1, place = null;
+    for (let tr = 0; tr < 40 && !place; tr++) {
+      let x = 0, y = 0, rowH = 0; const pl = {}; let ok = true;
+      for (const k of used) {
+        const w = Math.ceil(views[k].w * scale) + GUT, h = Math.ceil(views[k].h * scale) + GUT;
+        if (w > AW) { ok = false; break; }
+        if (x + w > AW) { x = 0; y += rowH; rowH = 0; }
+        pl[k] = { x: x + GUT / 2, y: y + GUT / 2 }; x += w; if (h > rowH) rowH = h;
+      }
+      if (ok && y + rowH <= AW - STRIP) place = pl; else scale *= 0.93;
+    }
+    if (!place) throw new Error("Atlas : les vues sont trop grandes pour la texture.");
+    const AH = AW;
+    const data = new Uint8Array(AW * AH * 4);
+    for (let i = 3; i < data.length; i += 4) data[i] = 255;
+    const tmp = [0, 0, 0];
+    for (const k of used) {
+      const v = views[k], tw = Math.ceil(v.w * scale), th = Math.ceil(v.h * scale), pp = place[k];
+      for (let y = 0; y < th; y++) for (let x = 0; x < tw; x++) {
+        const cx0 = (x + 0.5) / scale, cy0 = (y + 0.5) / scale, q = 0.25 / scale;
+        let r = 0, g = 0, b = 0;
+        for (let j = -1; j <= 1; j += 2) for (let i = -1; i <= 1; i += 2) { bil(v, cx0 + i * q, cy0 + j * q, tmp); r += tmp[0]; g += tmp[1]; b += tmp[2]; }
+        const di = ((pp.y + y) * AW + pp.x + x) * 4;
+        data[di] = r / 4; data[di + 1] = g / 4; data[di + 2] = b / 4;
+      }
+    }
+    // 3) bande d'aplats (cellules 2x2, 4 bits par canal)
+    const cells = new Map(), cellsPerRow = AW / 2, y0 = AH - STRIP;
+    const flat = (t) => {
+      let r = 0, g = 0, b = 0;
+      for (let k = 0; k < 3; k++) { const i = I[t * 3 + k]; r += mesh.colors[i * 3]; g += mesh.colors[i * 3 + 1]; b += mesh.colors[i * 3 + 2]; }
+      const key = ((r / 3) >> 4) << 8 | ((g / 3) >> 4) << 4 | ((b / 3) >> 4);
+      let ce = cells.get(key);
+      if (!ce) {
+        ce = cells.size; cells.set(key, ce);
+        const cx = (ce % cellsPerRow) * 2, cy = y0 + Math.floor(ce / cellsPerRow) * 2;
+        for (let j = 0; j < 2; j++) for (let i = 0; i < 2; i++) {
+          const di = ((cy + j) * AW + cx + i) * 4;
+          data[di] = ((key >> 8) & 15) * 17; data[di + 1] = ((key >> 4) & 15) * 17; data[di + 2] = (key & 15) * 17;
+        }
+      }
+      return [((ce % cellsPerRow) * 2 + 1) / AW, (y0 + Math.floor(ce / cellsPerRow) * 2 + 1) / AH];
+    };
+    // 4) sommets dupliques par triangle
+    const nv = NT * 3;
+    const pos = new Float32Array(nv * 3), nrm = new Float32Array(nv * 3), uv = new Float32Array(nv * 2), idx = new Uint32Array(nv);
+    for (let t = 0; t < NT; t++) {
+      const k = pick[t], f = k < 0 ? flat(t) : null;
+      for (let j = 0; j < 3; j++) {
+        const i = I[t * 3 + j], o3 = (t * 3 + j);
+        pos[o3 * 3] = P[i * 3] * sc; pos[o3 * 3 + 1] = P[i * 3 + 1] * sc; pos[o3 * 3 + 2] = P[i * 3 + 2] * sc;
+        nrm[o3 * 3] = mesh.normals[i * 3]; nrm[o3 * 3 + 1] = mesh.normals[i * 3 + 1]; nrm[o3 * 3 + 2] = mesh.normals[i * 3 + 2];
+        if (f) { uv[o3 * 2] = f[0]; uv[o3 * 2 + 1] = f[1]; }
+        else {
+          const v = views[k], q = pr(i, k), pp = place[k];
+          const cx = clamp(q[0], 0.5, v.w - 0.5), cy = clamp(q[1], 0.5, v.h - 0.5);
+          uv[o3 * 2] = (pp.x + cx * scale) / AW; uv[o3 * 2 + 1] = (pp.y + cy * scale) / AH;
+        }
+        idx[o3] = o3;
+      }
+    }
+    // recentrage : pieds a y=0, centre de l'emprise a x=z=0
+    let ymin = Infinity, ymax = -Infinity;
+    for (let i = 0; i < nv; i++) { const y = pos[i * 3 + 1]; if (y < ymin) ymin = y; if (y > ymax) ymax = y; }
+    let fx0 = Infinity, fx1 = -Infinity, fz0 = Infinity, fz1 = -Infinity;
+    const yLim = ymin + 0.1 * (ymax - ymin);
+    for (let i = 0; i < nv; i++) if (pos[i * 3 + 1] <= yLim) {
+      const x = pos[i * 3], z = pos[i * 3 + 2];
+      if (x < fx0) fx0 = x; if (x > fx1) fx1 = x; if (z < fz0) fz0 = z; if (z > fz1) fz1 = z;
+    }
+    const cxm = (fx0 + fx1) / 2, czm = (fz0 + fz1) / 2;
+    for (let i = 0; i < nv; i++) { pos[i * 3] -= cxm; pos[i * 3 + 1] -= ymin; pos[i * 3 + 2] -= czm; }
+    return {
+      positions: pos, normals: nrm, uvs: uv, indices: idx,
+      size: { x: mesh.size.x * sc, y: mesh.size.y * sc, z: mesh.size.z * sc },
+      atlas: { width: AW, height: AH, data }, info: Object.assign({}, info, { atlasScale: scale, flatColors: cells.size, flatTris: pick.filter((v) => v < 0).length, triangles: NT }),
+    };
+  }
+
+  // GLB texture. encoded = { bytes: Uint8Array, mime: 'image/png' | 'image/jpeg' }
+  function exportGLBTextured(asset, encoded, name) {
+    const nv = asset.positions.length / 3, ni = asset.indices.length, img = encoded.bytes;
+    const mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
+    for (let i = 0; i < nv; i++) for (let k = 0; k < 3; k++) { const v = asset.positions[i * 3 + k]; if (v < mn[k]) mn[k] = v; if (v > mx[k]) mx[k] = v; }
+    const imgPad = (4 - (img.length % 4)) % 4;
+    const off = [0, nv * 12, nv * 24, nv * 32];
+    const binLen = nv * 32 + ni * 4 + img.length + imgPad;
+    const nm = name || 'modele';
+    const json = {
+      asset: { version: '2.0', generator: 'Atelier Figurine' },
+      scene: 0, scenes: [{ nodes: [0] }], nodes: [{ mesh: 0, name: nm }],
+      meshes: [{ name: nm, primitives: [{ attributes: { POSITION: 0, NORMAL: 1, TEXCOORD_0: 2 }, indices: 3, material: 0, mode: 4 }] }],
+      materials: [{ name: nm, pbrMetallicRoughness: { baseColorTexture: { index: 0 }, metallicFactor: 0, roughnessFactor: 0.85 } }],
+      textures: [{ source: 0, sampler: 0 }], samplers: [{ magFilter: 9729, minFilter: 9987, wrapS: 33071, wrapT: 33071 }],
+      images: [{ bufferView: 4, mimeType: encoded.mime }],
+      accessors: [
+        { bufferView: 0, componentType: 5126, count: nv, type: 'VEC3', min: mn, max: mx },
+        { bufferView: 1, componentType: 5126, count: nv, type: 'VEC3' },
+        { bufferView: 2, componentType: 5126, count: nv, type: 'VEC2' },
+        { bufferView: 3, componentType: 5125, count: ni, type: 'SCALAR' },
+      ],
+      bufferViews: [
+        { buffer: 0, byteOffset: off[0], byteLength: nv * 12, target: 34962 },
+        { buffer: 0, byteOffset: off[1], byteLength: nv * 12, target: 34962 },
+        { buffer: 0, byteOffset: off[2], byteLength: nv * 8, target: 34962 },
+        { buffer: 0, byteOffset: off[3], byteLength: ni * 4, target: 34963 },
+        { buffer: 0, byteOffset: nv * 32 + ni * 4, byteLength: img.length },
+      ],
+      buffers: [{ byteLength: binLen }],
+    };
+    let js = JSON.stringify(json);
+    while (js.length % 4) js += ' ';
+    const jb = new TextEncoder().encode(js), total = 12 + 8 + jb.length + 8 + binLen;
+    const out = new ArrayBuffer(total), dv = new DataView(out), u8 = new Uint8Array(out);
+    dv.setUint32(0, 0x46546c67, true); dv.setUint32(4, 2, true); dv.setUint32(8, total, true);
+    dv.setUint32(12, jb.length, true); dv.setUint32(16, 0x4e4f534a, true);
+    u8.set(jb, 20);
+    let q = 20 + jb.length;
+    dv.setUint32(q, binLen, true); dv.setUint32(q + 4, 0x004e4942, true); q += 8;
+    u8.set(new Uint8Array(asset.positions.buffer), q); q += nv * 12;
+    u8.set(new Uint8Array(asset.normals.buffer), q); q += nv * 12;
+    u8.set(new Uint8Array(asset.uvs.buffer), q); q += nv * 8;
+    u8.set(new Uint8Array(asset.indices.buffer), q); q += ni * 4;
+    u8.set(img, q);
     return out;
   }
 
@@ -1593,7 +1774,7 @@
 
   return {
     computeMask, cleanMask, findSegments, analyzeSheet, prepareViews, prepareViewList, reconstruct, reconstructN, detectLayout, dropSmallParts,
-    exportSTL, exportGLB, makeZip, crc32, renderSampleSheet, sampleInside, SAMPLE_PARTS, DEFAULTS,
+    exportSTL, exportGLB, reconstructGame, buildAtlasMesh, exportGLBTextured, makeZip, crc32, renderSampleSheet, sampleInside, SAMPLE_PARTS, DEFAULTS,
     _internal: { surfaceNets, rowRuns, bestShift, coverage, gaussian3, decideSides },
   };
 }));

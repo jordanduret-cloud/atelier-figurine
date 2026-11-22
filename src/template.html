@@ -252,6 +252,20 @@ input[type="color"] { width: 100%; min-height: 40px; border: 1px solid var(--lin
     <div class="actions"><button id="dl" class="btn" type="button" disabled>Télécharger STL + GLB (.zip)</button></div>
     <p id="dlNote" class="note" role="status">Les deux fichiers arrivent dans un seul .zip : ici, la page ne peut pas proposer un .stl ou un .glb directement.</p>
   </section>
+
+  <section class="panel" aria-labelledby="h-game">
+    <div class="panel-head"><h2 id="h-game">Export jeu (Cosmos Colonies)</h2><span id="gameDims" class="mono muted"></span></div>
+    <p class="note">GLB texturé avec UV, sans socle, allégé : Y vers le haut, pieds à l’origine, face vers +Z, hauteur 1. Prêt pour la conversion du jeu (JSON + WebP).</p>
+    <div class="fields">
+      <div class="field"><div class="flabel"><label for="gameKind">Type de modèle</label></div>
+        <select id="gameKind"><option value="30000">Bâtiment · 30 000 triangles</option><option value="50000">Personnage · 50 000 triangles</option><option value="80000">Vaisseau · 80 000 triangles</option></select></div>
+      <div class="field"><div class="flabel"><label for="gameTex">Texture</label></div>
+        <select id="gameTex"><option value="1024">1024 px (bâtiment)</option><option value="2048">2048 px (personnage)</option></select></div>
+      <div class="field wide"><div class="flabel"><label for="gameName">Nom du fichier (monde-type)</label></div><input id="gameName" class="txt" type="text" maxlength="40" value="terre-qg" placeholder="ex. mars-caserne"></div>
+    </div>
+    <div class="actions"><button id="gameDl" class="btn primary" type="button" disabled>Préparer le GLB du jeu (.zip)</button></div>
+    <p id="gameNote" class="note" role="status">Les vues doivent être chargées et la figurine générée au moins une fois pour vérifier le rendu.</p>
+  </section>
 </main>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -363,7 +377,7 @@ input[type="color"] { width: 100%; min-height: 40px; border: 1px solid var(--lin
   function analyze() {
     if (!S.img) return;
     try {
-      S.analysis = A.analyzeSheet(S.img, { tol: S.cfg.tol, split: S.cfg.split, count: S.cfg.count, rows: S.cfg.count === 4 ? 1 : S.cfg.rows });
+      S.analysis = A.analyzeSheet(S.img, { tol: S.cfg.tol, split: S.cfg.split, count: S.cfg.count, rows: S.cfg.count === 4 ? 1 : S.cfg.rows }); $('gameDl').disabled = S.busy;
       var n = S.analysis.segs.filter(function (s) { return !s.empty; }).length;
       $('analysis').textContent = n + ' vues détectées' + (S.analysis.alpha ? ' · transparence utilisée' : '') + (S.cfg.split === 'equal' ? ' · découpe en parts égales' : '');
       if (S.layoutNote) $('analysis').textContent += ' · ' + S.layoutNote;
@@ -373,7 +387,7 @@ input[type="color"] { width: 100%; min-height: 40px; border: 1px solid var(--lin
       if (hmed && hmed < 350) { $('analysis').textContent += ' · image petite : ' + hmed + ' px de haut par vue (vise 800 px ou plus)'; $('analysis').className = 'note mono warn'; }
       renderViews(); drawSheet();
     } catch (e) {
-      S.analysis = null; $('views').innerHTML = '';
+      S.analysis = null; $('gameDl').disabled = true; $('views').innerHTML = '';
       $('analysis').textContent = e.message; $('analysis').className = 'note mono error';
       drawSheet();
     }
@@ -561,7 +575,7 @@ input[type="color"] { width: 100%; min-height: 40px; border: 1px solid var(--lin
     $('stats').textContent = fmtInt(r.info.triangles) + ' triangles';
     $('dims').textContent = (r.size.x * k).toFixed(1) + ' × ' + (r.size.z * k).toFixed(1) + ' × ' + S.cfg.height + ' mm';
   }
-  function setBusy(b) { S.busy = b; $('gen').disabled = b; $('dl').disabled = b || !S.result; }
+  function setBusy(b) { S.busy = b; $('gen').disabled = b; $('dl').disabled = b || !S.result; $('gameDl').disabled = b || !S.analysis; }
   function generate() {
     if (S.busy || !S.analysis) return Promise.resolve();
     setBusy(true); note('');
@@ -626,6 +640,52 @@ input[type="color"] { width: 100%; min-height: 40px; border: 1px solid var(--lin
       msg.className = 'note error';
       msg.textContent = e && e.code === 'declined' ? 'Téléchargement annulé.' : 'Le téléchargement a échoué' + (e && e.code ? ' (' + e.code + ').' : '.');
     }).then(function () { btn.disabled = !S.result || S.busy; });
+  });
+
+
+  /* ---------- Export jeu : GLB texture, sans socle ---------- */
+  var ROLE_DEG = { front: 0, left: 90, back: 180, right: 270 };
+  function canvasPNG(w, h, rgba) {
+    return new Promise(function (res, rej) {
+      var c = document.createElement('canvas'); c.width = w; c.height = h;
+      c.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(rgba.buffer, rgba.byteOffset, rgba.length), w, h), 0, 0);
+      c.toBlob(function (b) { if (!b) return rej(new Error('Encodage PNG impossible.')); b.arrayBuffer().then(function (ab) { res({ bytes: new Uint8Array(ab), mime: 'image/png' }); }); }, 'image/png');
+    });
+  }
+  $('gameKind').addEventListener('change', function () { $('gameTex').value = this.value === '30000' ? '1024' : '2048'; });
+  $('gameDl').addEventListener('click', function () {
+    if (S.busy || !S.analysis) return;
+    var btn = $('gameDl'), msg = $('gameNote');
+    var name = ($('gameName').value || 'modele').toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'modele';
+    var multi = S.cfg.count !== 4;
+    setBusy(true); msg.className = 'note'; msg.textContent = 'Reconstruction allégée…';
+    var asset;
+    tick().then(function () {
+      var views = A.prepareViewList(S.img, S.analysis.mask, S.analysis.segs);
+      var angles = multi ? (S.angles || null) : S.roles.map(function (r) { return ROLE_DEG[r]; });
+      var o = {
+        targetTris: Number($('gameKind').value), texSize: Number($('gameTex').value), height: 1,
+        smooth: S.cfg.smooth / 100, direction: multi ? (S.cfg.dir === 'auto' ? 'auto' : Number(S.cfg.dir)) : 1,
+        tolerance: S.cfg.tolView === true ? 1 : 'auto', angles: angles
+      };
+      return A.reconstructGame(views, o, function (m) { msg.textContent = m; return tick(); });
+    }).then(function (a) {
+      asset = a; msg.textContent = 'Encodage de la texture…';
+      return canvasPNG(a.atlas.width, a.atlas.height, a.atlas.data);
+    }).then(function (png) {
+      var glb = A.exportGLBTextured(asset, png, name);
+      var zip = A.makeZip([{ name: name + '.glb', data: new Uint8Array(glb) }]);
+      return getDownloads().then(function (dl) {
+        if (!dl) { msg.className = 'note warn'; msg.textContent = 'Le téléchargement n’est pas disponible dans cet affichage. Ouvre la page directement dans Claude.'; return; }
+        return dl.save({ filename: name + '.zip', data: new Blob([zip], { type: 'application/zip' }) }).then(function () {
+          msg.textContent = name + '.glb enregistré dans le .zip : ' + fmtInt(asset.info.triangles) + ' triangles, texture ' + asset.atlas.width + ' px, ' + (glb.byteLength / 1048576).toFixed(1) + ' Mo.';
+          $('gameDims').textContent = fmtInt(asset.info.triangles) + ' tri';
+        });
+      });
+    }).catch(function (e) {
+      console.error(e); msg.className = 'note error';
+      msg.textContent = e && e.code === 'declined' ? 'Téléchargement annulé.' : (e && e.message ? e.message : 'L’export a échoué.');
+    }).then(function () { setBusy(false); });
   });
 
   /* ---------- Fichier : choix et glisser-deposer ---------- */
