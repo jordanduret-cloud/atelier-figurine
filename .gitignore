@@ -6,3 +6,4 @@
 *.u8
 node_modules/
 site/
+!site-src/*.png
