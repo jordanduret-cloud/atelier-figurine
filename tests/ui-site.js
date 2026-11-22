@@ -6,7 +6,7 @@ const srv=http.createServer((q,r)=>{let f=path.join(root,q.url.split('?')[0]==='
 p.on('pageerror',e=>errs.push(String(e)));
 await p.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());
 await p.goto('http://localhost:8791/');await p.waitForTimeout(2500);
-console.log('three charge',await p.evaluate('typeof THREE'),'| manifest',await p.evaluate('fetch("manifest.webmanifest").then(r=>r.status)'),'| sw',await p.evaluate('navigator.serviceWorker.getRegistration().then(r=>!!r)'));
+console.log('three charge',await p.evaluate('typeof THREE'),'| manifest',await p.evaluate('fetch("manifest.json").then(r=>r.status)'),'| sw',await p.evaluate('navigator.serviceWorker.getRegistration().then(r=>!!r)'));
 const [dl]=await Promise.all([p.waitForEvent('download',{timeout:90000}),p.click('#gameDl')]);
 console.log('telechargement',dl.suggestedFilename(),fs.statSync(await dl.path()).size);
 console.log('erreurs page',errs);await b.close();srv.close();})();
